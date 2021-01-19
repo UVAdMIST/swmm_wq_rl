@@ -1,9 +1,6 @@
 """
-Benjamin Bowes, 12-04-20
-
-This script simulates passive stormwater system operation with Norfolk's Hague SWMM model.
-Groundwater exchange with storage ponds is simulated outside of SWMM at every time step (currently commented out to increase simulation speed).
-Depth, flooding, and pollutant values are recorded.
+Created by Benjamin Bowes, 4-19-19
+This script records depth and flood values at each swmm model time step and plots them.
 """
 
 import matplotlib.pyplot as plt
@@ -14,18 +11,19 @@ from pyswmm import Simulation, Nodes, Links, Subcatchments
 from swmm_rl_hague.gwl_utils import calc_gwl
 # from smart_stormwater_rl.pyswmm_utils import save_out
 
+start_time = datetime.datetime.now()
 control_time_step = 900  # control time step in seconds
-swmm_inp = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v17.inp"
+swmm_inp = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v19_notreat.inp"
 # swmm_inp = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v11_template_WQ_AllEnvData_withLC2_notreat.inp"
 gwl_df = pd.read_csv("C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/Data_2010_2019/IDW_2010_2019.csv",
-                     usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True,
-                     parse_dates=True)
+                     usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True, parse_dates=True)
 
 time = []
 St1_inflow, St2_inflow, St3_inflow = [], [], []
 St1_gwflow, St2_gwflow, St3_gwflow = [], [], []
 St1_depth, St2_depth, St3_depth = [], [], []
-St1_flooding, St2_flooding, St3_flooding = [], [], []  # flood volume in cubic feet
+St1_flooding, St2_flooding, St3_flooding = [], [], []  # incremental flood rate
+St1_fld_vol, St2_fld_vol, St3_fld_vol = [], [], []  # incremental flood volume
 St1_full, St2_full, St3_full = [], [], []
 St1_TSS, St2_TSS, St3_TSS = [], [], []
 St1_TSS_mass, St2_TSS_mass, St3_TSS_mass = [], [], []
@@ -35,15 +33,16 @@ St1_TP, St2_TP, St3_TP = [], [], []
 St1_TN, St2_TN, St3_TN = [], [], []
 St1_flow, St2_flow, St3_flow = [], [], []
 R1_TSS, R2_TSS, R3_TSS = [], [], []
+R1_TSS_inc, R2_TSS_inc, R3_TSS_inc = [], [], []
 R1_TP, R2_TP, R3_TP = [], [], []
 R1_TN, R2_TN, R3_TN = [], [], []
 R1_flow, R2_flow, R3_flow = [], [], []
 R1_act, R2_act, R3_act = [], [], []
 
-with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation at SWMM time step to accurately include gwl exchange
+with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation
     # sim.step_advance(control_time_step)
     sim.start_time = datetime.datetime(2010, 1, 1, 0, 0, 0)  # change start time here
-    sim.end_time = datetime.datetime(2011, 1, 1, 0, 0, 0)  # change end time here
+    sim.end_time = datetime.datetime(2019, 11, 1, 0, 0, 0)  # change end time here
     previous_step = sim.start_time
     node_object = Nodes(sim)  # init node object
     St1 = node_object["st1"]
@@ -91,6 +90,8 @@ with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation at
         # print("post gwl", St1.total_inflow)
 
         # record variables on the 15min control time step
+        # time_delta = sim.current_time - previous_step
+        # if int(time_delta.total_seconds()) == control_time_step:
         if step_count % control_time_step == 0:
             print("control step:", sim.current_time)
             time.append(sim.current_time)
@@ -99,6 +100,9 @@ with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation at
             St2_depth.append(St2.depth - abs(St2.invert_elevation))
             St3_depth.append(St3.depth - abs(St3.invert_elevation))
             St1_flooding.append(St1.flooding), St2_flooding.append(St2.flooding), St3_flooding.append(St3.flooding)
+            St1_fld_vol.append((St1.statistics['flooding_volume'] * 7.481 - sum(St1_fld_vol)))  # incremental vol in gal
+            St2_fld_vol.append((St2.statistics['flooding_volume'] * 7.481 - sum(St2_fld_vol)))
+            St3_fld_vol.append((St3.statistics['flooding_volume'] * 7.481 - sum(St3_fld_vol)))
             St1_full.append(St1.full_depth - abs(St1.invert_elevation))
             St2_full.append(St2.full_depth - abs(St2.invert_elevation))
             St3_full.append(St3.full_depth - abs(St3.invert_elevation))
@@ -125,9 +129,12 @@ with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation at
             St1_TN.append(St1.pollut_quality['TN'])  # TN concentration after treatment (mg/L)
             St2_TN.append(St2.pollut_quality['TN'])
             St3_TN.append(St3.pollut_quality['TN'])
-            R1_TSS.append(R1.total_loading['TSS'])  # pounds of TSS passing through orifice
+            R1_TSS.append(R1.total_loading['TSS'])  # cumulative pounds of TSS passing through orifice
             R2_TSS.append(R2.total_loading['TSS'])
             R3_TSS.append(R3.total_loading['TSS'])
+            R1_TSS_inc.append(R1.total_loading['TSS'] - R1_TSS[-1])  # cumulative pounds of TSS passing through orifice
+            R2_TSS_inc.append(R2.total_loading['TSS'] - R2_TSS[-1])
+            R3_TSS_inc.append(R3.total_loading['TSS'] - R3_TSS[-1])
             R1_TP.append(R1.total_loading['TP'])  # pounds of TP passing through orifice
             R2_TP.append(R2.total_loading['TP'])
             R3_TP.append(R3.total_loading['TP'])
@@ -140,7 +147,9 @@ with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation at
         step_count += 1
 
 out_lists = [time, St1_depth, St2_depth, St3_depth, St1_flooding, St2_flooding, St3_flooding,
-             St1_TSS, St2_TSS, St3_TSS, St1_TSS_mass, St2_TSS_mass, St3_TSS_mass, R1_TSS, R2_TSS, R3_TSS,
+             St1_fld_vol, St2_fld_vol, St3_fld_vol, St1_TSS, St2_TSS, St3_TSS,
+             St1_TSS_mass, St2_TSS_mass, St3_TSS_mass, R1_TSS, R2_TSS, R3_TSS,
+             R1_TSS_inc, R2_TSS_inc, R3_TSS_inc,
              St1_TP, St2_TP, St3_TP, R1_TP, R2_TP, R3_TP, St1_TP_mass, St2_TP_mass, St3_TP_mass,
              St1_TN, St2_TN, St3_TN, R1_TN, R2_TN, R3_TN, St1_TN_mass, St2_TN_mass, St3_TN_mass,
              St1_gwflow, St2_gwflow, St3_gwflow, St1_flow, St2_flow, St3_flow,
@@ -148,16 +157,21 @@ out_lists = [time, St1_depth, St2_depth, St3_depth, St1_flooding, St2_flooding, 
 
 out_df = pd.DataFrame(out_lists).transpose()
 out_df.columns = ["Datetime", "St1_depth", "St2_depth", "St3_depth", "St1_flooding", "St2_flooding", "St3_flooding",
-                  "St1_TSS", "St2_TSS", "St3_TSS", "St1_TSS_mass", "St2_TSS_mass", "St3_TSS_mass", "R1_TSS", "R2_TSS", "R3_TSS",
+                  "St1_fld_vol", "St2_fld_vol", "St3_fld_vol", "St1_TSS", "St2_TSS", "St3_TSS",
+                  "St1_TSS_mass", "St2_TSS_mass", "St3_TSS_mass", "R1_TSS", "R2_TSS", "R3_TSS",
+                  "R1_TSS_inc", "R2_TSS_inc", "R3_TSS_inc",
                   "St1_TP", "St2_TP", "St3_TP", "R1_TP", "R2_TP", "R3_TP", "St1_TP_mass", "St2_TP_mass", "St3_TP_mass",
                   "St1_TN", "St2_TN", "St3_TN", "R1_TN", "R2_TN", "R3_TN", "St1_TN_mass", "St2_TN_mass", "St3_TN_mass",
                   "St1_gwflow", "St2_gwflow", "St3_gwflow", "St1_flow", "St2_flow", "St3_flow",
                   "St1_full", "St2_full", "St3_full", "R1_act", "R2_act", "R3_act"]
-out_df.to_csv("C:/PycharmProjects/swmm_rl_hague/results_2010_2011/out_df_all_polluts_treated_2010_v17.csv", index=False)
+out_df.to_csv("C:/PycharmProjects/swmm_rl_hague/results_2010_2011/out_df_v20_untreated.csv", index=False)
+
+end_time = datetime.datetime.now()
+print("start: ", start_time, "\n end: ", end_time)
 
 # save_out(out_lists, "Uncontrolled")
 
-# # plot results with GWL. TODO clean up plots
+# # plot results with GWL
 # gwl_slice = gwl_df.loc['2019-08-01 00:00:00':'2019-09-01 00:00:00']
 # gwl_slice = gwl_slice.resample('15T').ffill()
 # # gwl_slice.reset_index(inplace=True)
