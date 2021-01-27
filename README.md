@@ -3,7 +3,7 @@ This repository contains python codes and SWMM models to develop real-time contr
 
 ## Required packages:
 1. pyswmm
-2. keras-rl (once installed, replace rl.core with modified file: core.py in this repo)
+2. keras-rl (once installed, replace rl.core with modified file: core.py in this rl folder)
 3. openai-gym
 
 ## Control Scenarios
