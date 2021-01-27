@@ -48,8 +48,12 @@ class BasicEnv(Env):
         # self.state = np.concatenate([np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
         #                                          self.R1.current_setting, self.R3.current_setting]),
         #                              current_fcst])
+        # self.state = np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
+        #                          self.R1.current_setting, self.R3.current_setting,
+        #                          rain_fcst, tide_fcst])
         self.state = np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
-                                 self.R1.current_setting, self.R3.current_setting, rain_fcst, tide_fcst])
+                                 self.R1.current_setting, self.R3.current_setting,
+                                 self.R1.pollut_quality['TSS'], self.R3.pollut_quality['TSS'], rain_fcst, tide_fcst])
         self.action_space = spaces.Box(low=np.array([0, 0]), high=np.array([1, 1]), dtype=np.float32)
         self.observation_space = spaces.Box(low=0, high=1000, shape=(len(self.state),), dtype=np.float32)
         
@@ -63,22 +67,26 @@ class BasicEnv(Env):
         current_fcst = self.fcst.iloc[self.fcst.index.get_loc(self.sim.current_time, method='nearest')]
         rain_fcst = sum(current_fcst[:int(len(current_fcst) / 2)])  # total rainfall in forecast
         tide_fcst = np.mean(current_fcst[int(len(current_fcst) / 2):])  # mean tide in forecast
+        # self.state = np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
+        #                          self.R1.current_setting, self.R3.current_setting,
+        #                          rain_fcst, tide_fcst])
         self.state = np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
-                                 self.R1.current_setting, self.R3.current_setting, rain_fcst, tide_fcst])
+                                 self.R1.current_setting, self.R3.current_setting,
+                                 self.R1.pollut_quality['TSS'], self.R3.pollut_quality['TSS'], rain_fcst, tide_fcst])
 
-        # 1 flood and depth reward
-        reward = - (self.St1.flooding + self.St3.flooding + abs(self.St1.depth - 7.5) + abs(self.St3.depth - 3.56))
+        # # 1 flood and depth reward
+        # reward = - (self.St1.flooding + self.St3.flooding + abs(self.St1.depth - 7.5) + abs(self.St3.depth - 3.56))
 
         # # 2 Conditional reward, no pollutants
-        # if np.sum(self.fcst[self.t, :-1]) > 0:  # check if rainfall forecast is positive
+        # if rain_fcst > 0:  # check if rainfall forecast is positive
         #     reward = - (self.St1.flooding + self.St3.flooding)  # instead of flood, use abs difference from pond max?
         # else:
         #     reward = - (abs(self.St1.depth - 7.5) + abs(self.St3.depth - 3.56))
-        #
-        # # 3 flood and pollutant reward
-        # reward = - (self.St1.flooding + self.St3.flooding + abs(self.St1.depth - 7.5) + abs(self.St3.depth - 3.56) +
-        #             self.R1.pollut_quality + self.R3.pollut_quality)
-        #
+
+        # 3 flood and pollutant reward
+        reward = - (self.St1.flooding + self.St3.flooding + abs(self.St1.depth - 7.5) + abs(self.St3.depth - 3.56) +
+                    self.R1.pollut_quality['TSS'] + self.R3.pollut_quality['TSS'])
+
         # # 4 conditional with pollutants reward
         # if np.sum(self.fcst[self.t, :-1]) > 0:  # check if rainfall forecast is positive
         # reward = - (self.St1.flooding + self.St3.flooding + self.R1.pollut_quality + self.R3.pollut_quality)
@@ -123,8 +131,12 @@ class BasicEnv(Env):
         current_fcst = self.fcst.iloc[self.fcst.index.get_loc(self.sim.current_time, method='nearest')]
         rain_fcst = sum(current_fcst[:int(len(current_fcst) / 2)])  # total rainfall in forecast
         tide_fcst = np.mean(current_fcst[int(len(current_fcst) / 2):])  # mean tide in forecast
+        # self.state = np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
+        #                          self.R1.current_setting, self.R3.current_setting,
+        #                          rain_fcst, tide_fcst])
         self.state = np.asarray([self.St1.depth, self.St3.depth, self.St1.flooding, self.St3.flooding,
-                                 self.R1.current_setting, self.R3.current_setting, rain_fcst, tide_fcst])
+                                 self.R1.current_setting, self.R3.current_setting,
+                                 self.R1.pollut_quality['TSS'], self.R3.pollut_quality['TSS'], rain_fcst, tide_fcst])
         return self.state
     
     def close(self):
