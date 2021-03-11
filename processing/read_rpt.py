@@ -66,7 +66,7 @@ def get_ele_lines(ele, file_contents):
 
 
 def get_total_flooding(file_contents):
-    fl_start_line = get_start_line("Flooding Loss")
+    fl_start_line = get_start_line("Flooding Loss", file_contents)
     return float(file_contents[fl_start_line].split()[-1])
 
 
@@ -75,8 +75,8 @@ def get_summary_df(file_contents, heading):
     heading: heading of summary table (e.g, "Node Flooding Summary")
     returns: a dataframe of the tabular data under the heading specified
     """
-    summary_start = get_start_line(heading)
-    summary_end = get_end_line(summary_start)
+    summary_start = get_start_line(heading, file_contents, start=0)
+    summary_end = get_end_line(summary_start, file_contents)
     lines = file_contents[summary_start:summary_end]
     # reverse the list of strings so data is on top. makes it easier to handle (less skipping)
     lines.reverse()
