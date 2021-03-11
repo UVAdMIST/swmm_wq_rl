@@ -3,21 +3,23 @@ Created by Benjamin Bowes, 4-19-19
 This script records depth and flood values at each swmm model time step and plots them.
 """
 
-import matplotlib.pyplot as plt
-import sys
-import subprocess
+# import matplotlib.pyplot as plt
+# import sys
+# import subprocess
 import datetime
 import math
 import pandas as pd
-from pyswmm import Simulation, Nodes, Links, Subcatchments
-from swmmtoolbox import swmmtoolbox as stb
+from pyswmm import Simulation, Nodes, Links
+from swmm_rl_hague.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
+# from swmmtoolbox import swmmtoolbox as stb
 # from swmm_utils import calc_gwl
 # from smart_stormwater_rl.pyswmm_utils import save_out
 
 
 start_time = datetime.datetime.now()
 control_time_step = 900  # control time step in seconds
-swmm_inp = "swmm_models/hague_v21_passive.inp"
+swmm_inp = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_passive2.inp"
+swmm_inp2 = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_passive.inp"
 # rpt_path = "swmm_models/hague_v21_simpleRLtest.rpt"
 # out_path = "swmm_models/hague_v21_simpleRLtest.out"
 # swmm_inp = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v11_template_WQ_AllEnvData_withLC2_notreat.inp"
@@ -45,7 +47,7 @@ R1_TSS_Conc, R2_TSS_Conc, R3_TSS_Conc = [], [], []  # TSS concentration
 R1_flow, R2_flow, R3_flow = [], [], []
 R1_act, R2_act, R3_act = [], [], []
 
-with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation
+with Simulation(swmm_inp) as sim:  # rpt without time series
     # sim.step_advance(control_time_step)
     sim.start_time = datetime.datetime(2019, 8, 1, 0, 0, 0)  # change start time here
     sim.end_time = datetime.datetime(2019, 9, 1, 0, 0, 0)  # change end time here
@@ -72,8 +74,8 @@ with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation
     step_count = 1
     for step in sim:
         # print(step_count)
-        # if int(sim.percent_complete * 100) % 5 == 0:
-        #     print(sim.percent_complete)
+        if sim.percent_complete * 100 % 5 == 0:
+            print(sim.percent_complete)
 
         if sim.current_time == sim.start_time:
             R1.target_setting = 1
@@ -98,84 +100,179 @@ with Simulation(swmm_inp) as sim:  # loop through all steps in the simulation
         # record variables on the 15min control time step
         # time_delta = sim.current_time - previous_step
         # if int(time_delta.total_seconds()) == control_time_step:
-        if step_count % control_time_step == 0:
-            print("control step:", sim.current_time)
-            time.append(sim.current_time)
-            # St1_gwflow.append(St1_gwq), St2_gwflow.append(St2_gwq), St3_gwflow.append(St3_gwq),
-            St1_depth.append(St1.depth), St2_depth.append(St2.depth), St3_depth.append(St3.depth)
-            St1_flooding.append(St1.flooding), St2_flooding.append(St2.flooding), St3_flooding.append(St3.flooding)
-            St1_fld_vol.append((St1.statistics['flooding_volume'] * 7.481 - sum(St1_fld_vol)))  # incremental vol in gal
-            St2_fld_vol.append((St2.statistics['flooding_volume'] * 7.481 - sum(St2_fld_vol)))
-            St3_fld_vol.append((St3.statistics['flooding_volume'] * 7.481 - sum(St3_fld_vol)))
-            St1_full.append(St1.full_depth), St2_full.append(St2.full_depth), St3_full.append(St3.full_depth)
-            St1_flow.append(St1.total_inflow * 28.3168)  # pond inflow, converted to L to calculate pollutant mass
-            St2_flow.append(St2.total_inflow * 28.3168)
-            St3_flow.append(St3.total_inflow * 28.3168)
-            R1_flow.append(R1.flow), R2_flow.append(R2.flow), R3_flow.append(R3.flow)
-            R1_act.append(R1.current_setting), R2_act.append(R2.current_setting), R3_act.append(R3.current_setting)
-            St1_TSS_Load.append(St1.pollut_quality['TSS'] * St1.volume * 28.3168 / 453592)  # TSS mass in pond after treatment (lbs)
-            St2_TSS_Load.append(St2.pollut_quality['TSS'] * St2.volume * 28.3168 / 453592)
-            St3_TSS_Load.append(St3.pollut_quality['TSS'] * St3.volume * 28.3168 / 453592)
-            # St1_TP_mass.append(St1.pollut_quality['TP'] * St1.volume * 28.3168 / 453592)  # TP mass in pond after treatment (lbs)
-            # St2_TP_mass.append(St2.pollut_quality['TP'] * St2.volume * 28.3168 / 453592)
-            # St3_TP_mass.append(St3.pollut_quality['TP'] * St3.volume * 28.3168 / 453592)
-            # St1_TN_mass.append(St1.pollut_quality['TN'] * St1.volume * 28.3168 / 453592)  # TN mass in pond after treatment (lbs)
-            # St2_TN_mass.append(St2.pollut_quality['TN'] * St2.volume * 28.3168 / 453592)
-            # St3_TN_mass.append(St3.pollut_quality['TN'] * St3.volume * 28.3168 / 453592)
-            St1_TSS_Conc.append(St1.pollut_quality['TSS'])  # TSS concentration after treatment (mg/L)
-            St2_TSS_Conc.append(St2.pollut_quality['TSS'])
-            St3_TSS_Conc.append(St3.pollut_quality['TSS'])
-            # St1_TP.append(St1.pollut_quality['TP'])  # TP concentration after treatment (mg/L)
-            # St2_TP.append(St2.pollut_quality['TP'])
-            # St3_TP.append(St3.pollut_quality['TP'])
-            # St1_TN.append(St1.pollut_quality['TN'])  # TN concentration after treatment (mg/L)
-            # St2_TN.append(St2.pollut_quality['TN'])
-            # St3_TN.append(St3.pollut_quality['TN'])
-            R1_TSS_Load.append(R1.total_loading['TSS'])  # cumulative pounds of TSS passing through orifice
-            R2_TSS_Load.append(R2.total_loading['TSS'])
-            R3_TSS_Load.append(R3.total_loading['TSS'])
-            R1_TSS_Conc.append(R1.pollut_quality['TSS'])  # orifice TSS concentration (mg/L)
-            R2_TSS_Conc.append(R2.pollut_quality['TSS'])
-            R3_TSS_Conc.append(R3.pollut_quality['TSS'])
-            # R1_TP.append(R1.total_loading['TP'])  # pounds of TP passing through orifice
-            # R2_TP.append(R2.total_loading['TP'])
-            # R3_TP.append(R3.total_loading['TP'])
-            # R1_TN.append(R1.total_loading['TN'])  # pounds of TN passing through orifice
-            # R2_TN.append(R2.total_loading['TN'])
-            # R3_TN.append(R3.total_loading['TN'])
-            # if len(R1_TSS) == 1:
-            #     R1_TSS_inc.append(R1.total_loading['TSS'])
-            #     R2_TSS_inc.append(R2.total_loading['TSS'])
-            #     R3_TSS_inc.append(R3.total_loading['TSS'])
-            # else:
-            #     R1_TSS_inc.append(R1.total_loading['TSS'] - R1_TSS[-2])  # cumulative pounds of TSS passing through orifice
-            #     R2_TSS_inc.append(R2.total_loading['TSS'] - R2_TSS[-2])
-            #     R3_TSS_inc.append(R3.total_loading['TSS'] - R3_TSS[-2])
-
-            # print("current time: ", sim.current_time, "flooding: ", J3.flooding, "flood_vol: ",
-            #       J3.statistics['flooding_volume'], "flood_rate: ", J3.statistics['peak_flooding_rate'])
-            # previous_step = sim.current_time
-        step_count += 1
+        # if step_count % control_time_step == 0:
+        #     print("control step:", sim.current_time)
+        #     time.append(sim.current_time)
+        #     # St1_gwflow.append(St1_gwq), St2_gwflow.append(St2_gwq), St3_gwflow.append(St3_gwq),
+        #     St1_depth.append(St1.depth), St2_depth.append(St2.depth), St3_depth.append(St3.depth)
+        #     St1_flooding.append(St1.flooding), St2_flooding.append(St2.flooding), St3_flooding.append(St3.flooding)
+        #     St1_fld_vol.append((St1.statistics['flooding_volume'] * 7.481 - sum(St1_fld_vol)))  # incremental vol in gal
+        #     St2_fld_vol.append((St2.statistics['flooding_volume'] * 7.481 - sum(St2_fld_vol)))
+        #     St3_fld_vol.append((St3.statistics['flooding_volume'] * 7.481 - sum(St3_fld_vol)))
+        #     St1_full.append(St1.full_depth), St2_full.append(St2.full_depth), St3_full.append(St3.full_depth)
+        #     St1_flow.append(St1.total_inflow * 28.3168)  # pond inflow, converted to L to calculate pollutant mass
+        #     St2_flow.append(St2.total_inflow * 28.3168)
+        #     St3_flow.append(St3.total_inflow * 28.3168)
+        #     R1_flow.append(R1.flow), R2_flow.append(R2.flow), R3_flow.append(R3.flow)
+        #     R1_act.append(R1.current_setting), R2_act.append(R2.current_setting), R3_act.append(R3.current_setting)
+        #     St1_TSS_Load.append(St1.pollut_quality['TSS'] * St1.volume * 28.3168 / 453592)  # TSS mass in pond after treatment (lbs)
+        #     St2_TSS_Load.append(St2.pollut_quality['TSS'] * St2.volume * 28.3168 / 453592)
+        #     St3_TSS_Load.append(St3.pollut_quality['TSS'] * St3.volume * 28.3168 / 453592)
+        #     # St1_TP_mass.append(St1.pollut_quality['TP'] * St1.volume * 28.3168 / 453592)  # TP mass in pond after treatment (lbs)
+        #     # St2_TP_mass.append(St2.pollut_quality['TP'] * St2.volume * 28.3168 / 453592)
+        #     # St3_TP_mass.append(St3.pollut_quality['TP'] * St3.volume * 28.3168 / 453592)
+        #     # St1_TN_mass.append(St1.pollut_quality['TN'] * St1.volume * 28.3168 / 453592)  # TN mass in pond after treatment (lbs)
+        #     # St2_TN_mass.append(St2.pollut_quality['TN'] * St2.volume * 28.3168 / 453592)
+        #     # St3_TN_mass.append(St3.pollut_quality['TN'] * St3.volume * 28.3168 / 453592)
+        #     St1_TSS_Conc.append(St1.pollut_quality['TSS'])  # TSS concentration after treatment (mg/L)
+        #     St2_TSS_Conc.append(St2.pollut_quality['TSS'])
+        #     St3_TSS_Conc.append(St3.pollut_quality['TSS'])
+        #     # St1_TP.append(St1.pollut_quality['TP'])  # TP concentration after treatment (mg/L)
+        #     # St2_TP.append(St2.pollut_quality['TP'])
+        #     # St3_TP.append(St3.pollut_quality['TP'])
+        #     # St1_TN.append(St1.pollut_quality['TN'])  # TN concentration after treatment (mg/L)
+        #     # St2_TN.append(St2.pollut_quality['TN'])
+        #     # St3_TN.append(St3.pollut_quality['TN'])
+        #     R1_TSS_Load.append(R1.total_loading['TSS'])  # cumulative pounds of TSS passing through orifice
+        #     R2_TSS_Load.append(R2.total_loading['TSS'])
+        #     R3_TSS_Load.append(R3.total_loading['TSS'])
+        #     R1_TSS_Conc.append(R1.pollut_quality['TSS'])  # orifice TSS concentration (mg/L)
+        #     R2_TSS_Conc.append(R2.pollut_quality['TSS'])
+        #     R3_TSS_Conc.append(R3.pollut_quality['TSS'])
+        #     # R1_TP.append(R1.total_loading['TP'])  # pounds of TP passing through orifice
+        #     # R2_TP.append(R2.total_loading['TP'])
+        #     # R3_TP.append(R3.total_loading['TP'])
+        #     # R1_TN.append(R1.total_loading['TN'])  # pounds of TN passing through orifice
+        #     # R2_TN.append(R2.total_loading['TN'])
+        #     # R3_TN.append(R3.total_loading['TN'])
+        #     # if len(R1_TSS) == 1:
+        #     #     R1_TSS_inc.append(R1.total_loading['TSS'])
+        #     #     R2_TSS_inc.append(R2.total_loading['TSS'])
+        #     #     R3_TSS_inc.append(R3.total_loading['TSS'])
+        #     # else:
+        #     #     R1_TSS_inc.append(R1.total_loading['TSS'] - R1_TSS[-2])  # cumulative pounds of TSS passing through orifice
+        #     #     R2_TSS_inc.append(R2.total_loading['TSS'] - R2_TSS[-2])
+        #     #     R3_TSS_inc.append(R3.total_loading['TSS'] - R3_TSS[-2])
+        #
+        #     # print("current time: ", sim.current_time, "flooding: ", J3.flooding, "flood_vol: ",
+        #     #       J3.statistics['flooding_volume'], "flood_rate: ", J3.statistics['peak_flooding_rate'])
+        #     # previous_step = sim.current_time
+        # step_count += 1
     sim.report()
 sim.close()
+
+with Simulation(swmm_inp2) as sim:  # rpt with time series
+    # sim.step_advance(control_time_step)
+    sim.start_time = datetime.datetime(2019, 8, 1, 0, 0, 0)  # change start time here
+    sim.end_time = datetime.datetime(2019, 9, 1, 0, 0, 0)  # change end time here
+    previous_step = sim.start_time
+    node_object = Nodes(sim)  # init node object
+    St1 = node_object["st1"]
+    St2 = node_object["st2"]
+    St3 = node_object["F134101"]
+
+    link_object = Links(sim)  # init link object
+    R1 = link_object["R1"]
+    R2 = link_object["R2"]
+    R3 = link_object["R3"]
+#
+# subcatchment_object = Subcatchments(sim)
+# S1 = subcatchment_object["S1"]
+# S2 = subcatchment_object["S2"]
+
+    # calculate radius (ft) of storage units for GWL calculations
+    St1_rad = math.sqrt(100000/math.pi)
+    St2_rad = math.sqrt(20000/math.pi)
+    St3_rad = math.sqrt(50000/math.pi)
+
+    for step in sim:
+        # print(step_count)
+        if sim.percent_complete * 100 % 5 == 0:
+            print(sim.percent_complete)
+
+        if sim.current_time == sim.start_time:
+            R1.target_setting = 1
+            R2.target_setting = 1
+            R3.target_setting = 1
+    sim.report()
+# sim.close()
+
+# read rpt file
+lines = get_file_contents(swmm_inp.split('.')[0] + ".rpt")  # rpt w/o time series
+lines2 = get_file_contents(swmm_inp2.split('.')[0] + ".rpt")  # rpt with time series
+
+# create dfs of time series
+st1_df = get_ele_df("Node st1", lines2)
+st1_df["St1_TSS_Load"] = st1_df["Inflow"] * st1_df["TSS"] * 900 * 28.317 / 453592  # est. load in lb/time step
+st1_df.columns = ['Date', 'Time', 'St1_Inflow', 'St1_Flooding', 'St1_Depth',
+                  'St1_Head', 'St1_TSS_Conc', "St1_TSS_Load"]
+st1_df.drop(["Date", "Time"], axis=1, inplace=True)
+st3_df = get_ele_df("Node F134101", lines2)
+st3_df["St3_TSS_load"] = st3_df["Inflow"] * st3_df["TSS"] * 900 * 28.317 / 453592
+st3_df.columns = ['Date', 'Time', 'St3_Inflow', 'St3_Flooding', 'St3_Depth',
+                  'St3_Head', 'St3_TSS_Conc', "St3_TSS_Load"]
+st3_df.drop(["Date", "Time"], axis=1, inplace=True)
+r1_df = get_ele_df("Link R1", lines2)
+# r1_df["R1_TSS_load"] = r1_df["Flow"] * r1_df["TSS"] * 900 * 28.317 / 453592
+r1_df.columns = ['Date', 'Time', 'R1_Flow', 'R1_Velocity', 'R1_Depth', 'R1_act', 'R1_TSS_Conc']
+r1_df.drop(["Date", "Time"], axis=1, inplace=True)
+r3_df = get_ele_df("Link R3", lines2)
+# r3_df["R3_TSS_load"] = r3_df["Flow"] * r3_df["TSS"] * 900 / 453592 / 28.317
+r3_df.columns = ['Date', 'Time', 'R3_Flow', 'R3_Velocity', 'R3_Depth', 'R3_act', 'R3_TSS_Conc']
+r3_df.drop(["Date", "Time"], axis=1, inplace=True)
+
+# get data from summary rpt file
+total_flood = get_total_flooding(lines)
+flood_df = get_summary_df(lines, "Node Flooding Summary")
+flood_df.columns = ["Hrs_Fld", "Max_Rate", "Max_Day", "Max_Time", "Total_Vol", "Max_Ponded"]
+outfall_df = get_summary_df(lines, "Outfall Loading Summary")
+outfall_df.columns = ["Flow_Pcnt", "Avg_Flow", "Max_Flow", "Total_Vol", "TSS"]
+st_df = get_summary_df(lines, "Storage Volume Summary")
+st_df.columns = ["Avg_Vol", "Avg_Pcnt_Full", "Evap_Pcnt", "Exfil_Pcnt", "Max_Vol",
+                 "Max_Pcnt_Full", "Max_Day", "Max_Time", "Max_Outflow"]
+pump_df = get_summary_df(lines, "Pumping Summary")
+pump_df.columns = ["Percent_Utilized", "Start_Ups", "Min_Flow", "Avg_Flow",
+                   "Max_Flow", "Total_Vol", "Power_Use", "Pcnt_Off_Low", "Pcnt_Off_High"]
+pollut_df = get_summary_df(lines, "Link Pollutant Load Summary")
+pollut_df.columns = ["TSS"]
+
+# save results data
+rpt_df = pd.concat([st1_df, st3_df, r1_df, r3_df], axis=1)
+
+if rpt_df["St1_Flooding"].any() > 0:
+    rpt_df["St1_Fld_Vol"] = flood_df.loc["st1"]["Total_Vol"]
+if rpt_df["St3_Flooding"].any() > 0:
+    rpt_df["St3_Fld_Vol"] = flood_df.loc["F134101"]["Total_Vol"]
+rpt_df["Pump_Pcnt"] = pump_df.loc["P1"]["Percent_Utilized"]
+rpt_df["Pump_Starts"] = pump_df.loc["P1"]["Start_Ups"]
+rpt_df["St1_TSS_Load"] = rpt_df["St1_TSS_Load"].sum()
+rpt_df["St3_TSS_Load"] = rpt_df["St3_TSS_Load"].sum()
+rpt_df["R1_TSS_Load"] = pollut_df.loc["R1"]["TSS"]
+rpt_df["R3_TSS_Load"] = pollut_df.loc["R3"]["TSS"]
+rpt_df["Outfall_TSS_Load"] = outfall_df.loc["System"]["TSS"]
+rpt_df["St1_Max"] = 10
+rpt_df['St3_Max'] = 6.56
+rpt_df['Total_Flood'] = total_flood
+
+rpt_df.to_csv("C:/PycharmProjects/swmm_rl_hague/results_082019/082019_passive_v22_withOutfall.csv", index=True)
 
 # swmmextract = stb.SwmmExtract(rpt_path)
 # print(stb.catalog(out_path))
 # outflow = stb.extract(out_path, 'node,st1,')
 
-out_lists = [time, St1_depth, St2_depth, St3_depth, St1_flooding, St2_flooding, St3_flooding,
-             St1_fld_vol, St2_fld_vol, St3_fld_vol, St1_TSS_Load, St2_TSS_Load, St3_TSS_Load,
-             R1_TSS_Load, R2_TSS_Load, R3_TSS_Load, R1_TSS_Conc, R2_TSS_Conc, R3_TSS_Conc,
-             St1_gwflow, St2_gwflow, St3_gwflow, St1_flow, St2_flow, St3_flow,
-             St1_full, St2_full, St3_full, R1_act, R2_act, R3_act]
-
-out_df = pd.DataFrame(out_lists).transpose()
-out_df.columns = ["Datetime", "St1_depth", "St2_depth", "St3_depth", "St1_flooding", "St2_flooding", "St3_flooding",
-                  "St1_fld_vol", "St2_fld_vol", "St3_fld_vol", "St1_TSS_Load", "St2_TSS_Load", "St3_TSS_Load",
-                  "R1_TSS_Load", "R2_TSS_Load", "R3_TSS_Load", "R1_TSS_Conc", "R2_TSS_Conc", "R3_TSS_Conc",
-                  "St1_gwflow", "St2_gwflow", "St3_gwflow", "St1_flow", "St2_flow", "St3_flow",
-                  "St1_full", "St2_full", "St3_full", "R1_act", "R2_act", "R3_act"]
-out_df.to_csv("results_passive/out_df_082019_v21_passive.csv", index=False)
+# out_lists = [time, St1_depth, St2_depth, St3_depth, St1_flooding, St2_flooding, St3_flooding,
+#              St1_fld_vol, St2_fld_vol, St3_fld_vol, St1_TSS_Load, St2_TSS_Load, St3_TSS_Load,
+#              R1_TSS_Load, R2_TSS_Load, R3_TSS_Load, R1_TSS_Conc, R2_TSS_Conc, R3_TSS_Conc,
+#              St1_gwflow, St2_gwflow, St3_gwflow, St1_flow, St2_flow, St3_flow,
+#              St1_full, St2_full, St3_full, R1_act, R2_act, R3_act]
+#
+# out_df = pd.DataFrame(out_lists).transpose()
+# out_df.columns = ["Datetime", "St1_depth", "St2_depth", "St3_depth", "St1_flooding", "St2_flooding", "St3_flooding",
+#                   "St1_fld_vol", "St2_fld_vol", "St3_fld_vol", "St1_TSS_Load", "St2_TSS_Load", "St3_TSS_Load",
+#                   "R1_TSS_Load", "R2_TSS_Load", "R3_TSS_Load", "R1_TSS_Conc", "R2_TSS_Conc", "R3_TSS_Conc",
+#                   "St1_gwflow", "St2_gwflow", "St3_gwflow", "St1_flow", "St2_flow", "St3_flow",
+#                   "St1_full", "St2_full", "St3_full", "R1_act", "R2_act", "R3_act"]
+# out_df.to_csv("results_082019/out_df_082019_v22_passive.csv", index=False)
 
 end_time = datetime.datetime.now()
 print("\n run time (hr): ", (end_time - start_time)/3600)
