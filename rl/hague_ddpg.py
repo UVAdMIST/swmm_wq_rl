@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from keras.models import Sequential, Model
-from keras.layers import Dense, Activation, Flatten, Input, Concatenate
+from keras.layers import Dense, Activation, Flatten, Input, Concatenate, BatchNormalization
 from keras.optimizers import Adam
 import tensorflow as tf
 from keras import backend as K
@@ -19,21 +19,23 @@ from rl.agents import DDPGAgent
 from rl.memory import SequentialMemory
 from rl.random import OrnsteinUhlenbeckProcess
 from swmm_rl_hague.hague_ddpg_Model import BasicEnv
-from swmm_rl_hague.read_rpt import get_ele_df, get_file_contents
+from swmm_rl_hague.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
 
 
-def get_end_line(file_lines, start_line):  # TODO use fxn in read_rpt.py instead
-    for i in range(len(file_lines[start_line:])):
-        line_no = start_line + i
-        if file_lines[line_no].strip() == "" and file_lines[line_no + 1].strip() == "":
-            return line_no
-    # raise error if end line of section not found
-    raise KeyError('Did not find end of section starting on line {}'.format(start_line))
+# def get_end_line(file_lines, start_line):
+#     for i in range(len(file_lines[start_line:])):
+#         line_no = start_line + i
+#         if file_lines[line_no].strip() == "" and file_lines[line_no + 1].strip() == "":
+#             return line_no
+#     # raise error if end line of section not found
+#     raise KeyError('Did not find end of section starting on line {}'.format(start_line))
 
 
-swmm_file = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v21_simpleRL.inp"
+swmm_file = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_simpleRL.inp"  # rpt w/o time series
+swmm_file2 = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_simpleRL2.inp"  # rpt w time series
 fcst = "C:/Users/Ben Bowes/Documents/LongTerm_SWMM/hague_fcst_2010_2019_dated.csv"
 env = BasicEnv(inp_file=swmm_file, fcst_file=fcst)  # env with forecasts
+# env2 = BasicEnv(inp_file=swmm_file2, fcst_file=fcst)
 # env = BasicEnv(depth=Depth)  # basic env
 assert len(env.action_space.shape) == 1
 nb_actions = env.action_space.shape[0]
@@ -50,13 +52,14 @@ sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
 K.set_session(sess)
 
 actor = Sequential()
-actor.add(Flatten(input_shape=(1,) + env.observation_space.shape))
-actor.add(Dense(16))
+# actor.add(BatchNormalization(input_shape=(1,) + env.observation_space.shape))  # batch norm
+actor.add(Flatten(input_shape=(1,) + env.observation_space.shape))  # is this needed with batch norm?
+actor.add(Dense(64))  # was 16
+actor.add(Activation('relu'))  # try leaky relu?
+actor.add(Dense(64))
 actor.add(Activation('relu'))
-actor.add(Dense(16))
-actor.add(Activation('relu'))
-actor.add(Dense(8))
-actor.add(Activation('relu'))
+# actor.add(Dense(8))
+# actor.add(Activation('relu'))
 actor.add(Dense(nb_actions))
 actor.add(Activation('sigmoid'))
 #print(actor.summary())
@@ -65,31 +68,31 @@ action_input = Input(shape=(nb_actions,), name='action_input')
 observation_input = Input(shape=(1,) + env.observation_space.shape, name='observation_input')
 flattened_observation = Flatten()(observation_input)
 x = Concatenate()([action_input, flattened_observation])
-x = Dense(32)(x)
+x = Dense(96)(x)
 x = Activation('relu')(x)
-x = Dense(32)(x)
+x = Dense(96)(x)
 x = Activation('relu')(x)
-x = Dense(32)(x)
-x = Activation('relu')(x)
+# x = Dense(32)(x)
+# x = Activation('relu')(x)
 x = Dense(1)(x)
 x = Activation('linear')(x)
 critic = Model(inputs=[action_input, observation_input], outputs=x)
 # print(critic.summary())
 
 memory = SequentialMemory(limit=1000000, window_length=1)
-random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=.15, mu=0., sigma=.1)
+random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=.15, mu=0., sigma=.1)  # maybe increase sigma, more exploration, 0.25
 agent = DDPGAgent(nb_actions=nb_actions, actor=actor, critic=critic, critic_action_input=action_input,
                   memory=memory, nb_steps_warmup_critic=50, nb_steps_warmup_actor=50,
                   random_process=random_process, gamma=.99, target_model_update=1e-3)
-agent.compile(Adam(lr=.001, clipnorm=1.), metrics=['mae'])
-train_steps = 500000  # 197000
-# agent.load_weights('swmm_rl_hague/agent_weights/ddpg_weights_297000.h5f')  # weights from rwd1
+agent.compile(Adam(lr=.001, clipnorm=1.), metrics=['mae'])  # maybe decrease lr
+train_steps = 120000  # 197000
+agent.load_weights('swmm_rl_hague/agent_weights/ddpg_weights_300000_rwd14bignet.h5f')
 # agent.load_weights('swmm_rl_multi_inp_forecast/agent_weights/ddpg_swmm_weights_100000_depth_4.61.h5f'.format(Depth))  # these wgts are from training XXX, but are used in the forecast models
 # agent.load_weights('C:/PycharmProjects/swmm_rl_multi_inp_forecast/agent_weights/ddpg_swmm_weights2_197000_depth_4.61.h5f')  # final weights from study 2
 
 train_start = datetime.now()
-agent.fit(env, nb_steps=train_steps, verbose=1)
-agent.save_weights('swmm_rl_hague/agent_weights/ddpg_weights_{}_rwd3.h5f'.format(train_steps), overwrite=True)
+agent.fit(env, nb_steps=train_steps, verbose=2)
+agent.save_weights('swmm_rl_hague/agent_weights/ddpg_weights_{}_rwd20bignet.h5f'.format(train_steps), overwrite=True)
 
 train_end = datetime.now()
 
@@ -118,15 +121,20 @@ train_end = datetime.now()
 # plt.tight_layout()
 # plt.show()
 
-history = agent.test(env, nb_episodes=1, visualize=False, nb_max_start_steps=0)
+history = agent.test(env, nb_episodes=1, visualize=False, nb_max_start_steps=0)  # rpt w/o time series
 env.close()
-all_actions = np.array(history.history['action'])
-all_states = np.array(history.history['states'])
-all_depths = all_states[:, :, :2]
-all_flooding = all_states[:, :, 2:4]
-all_tss = all_states[:, :, 6:8]
-st1_max = [10] * len(all_depths[0])
-st3_max = [7.16] * len(all_depths[0])
+
+env2 = BasicEnv(inp_file=swmm_file2, fcst_file=fcst)  # rpt with time series
+history2 = agent.test(env2, nb_episodes=1, visualize=False, nb_max_start_steps=0)
+env2.close()
+
+# all_actions = np.array(history.history['action'])
+# all_states = np.array(history.history['states'])
+# all_depths = all_states[:, :, :2]
+# all_flooding = all_states[:, :, 2:4]
+# all_tss = all_states[:, :, 6:8]
+# st1_max = [10] * len(all_depths[0])
+# st3_max = [7.16] * len(all_depths[0])
 
 # plot average rewards per episode
 avg_reward = []
@@ -137,53 +145,79 @@ for i in range(num_episodes):
     avg_reward.append(np.mean(temp_rwd))
 
 # read rpt file
-lines = get_file_contents(swmm_file.split('.')[0] + ".rpt")
+lines = get_file_contents(swmm_file.split('.')[0] + ".rpt")  # rpt w/o time series
+lines2 = get_file_contents(swmm_file2.split('.')[0] + ".rpt")  # rpt with time series
 
-# create dfs of needed elements
-st1_df = get_ele_df("Node st1", lines)
-st1_df["St1_TSS_load"] = st1_df["Inflow"] * st1_df["TSS"] * 900 / 453592 / 28.317  # est. load in lb/time step
+# create dfs of time series
+st1_df = get_ele_df("Node st1", lines2)
+st1_df["St1_TSS_Load"] = st1_df["Inflow"] * st1_df["TSS"] * 900 * 28.317 / 453592  # est. load in lb/time step
 st1_df.columns = ['Date', 'Time', 'St1_Inflow', 'St1_Flooding', 'St1_Depth',
-                  'St1_Head', 'St1_TSS', 'St1_TP', 'St1_TN', 'St1_TSS_load']
+                  'St1_Head', 'St1_TSS_Conc', "St1_TSS_Load"]
 st1_df.drop(["Date", "Time"], axis=1, inplace=True)
-st3_df = get_ele_df("Node F134101", lines)
-st3_df["St3_TSS_load"] = st3_df["Inflow"] * st3_df["TSS"] * 900 / 453592 / 28.317
+st3_df = get_ele_df("Node F134101", lines2)
+st3_df["St3_TSS_load"] = st3_df["Inflow"] * st3_df["TSS"] * 900 * 28.317 / 453592
 st3_df.columns = ['Date', 'Time', 'St3_Inflow', 'St3_Flooding', 'St3_Depth',
-                  'St3_Head', 'St3_TSS', 'St3_TP', 'St3_TN', 'St3_TSS_load']
+                  'St3_Head', 'St3_TSS_Conc', "St3_TSS_Load"]
 st3_df.drop(["Date", "Time"], axis=1, inplace=True)
-r1_df = get_ele_df("Link R1", lines)
-r1_df["R1_TSS_load"] = r1_df["Flow"] * r1_df["TSS"] * 900 / 453592 / 28.317
-r1_df.columns = ['Date', 'Time', 'R1_Flow', 'R1_Velocity', 'R1_Depth', 'R1_act',
-                  'R1_TSS', 'R1_TP', 'R1_TN', 'R1_TSS_load']
+r1_df = get_ele_df("Link R1", lines2)
+# r1_df["R1_TSS_load"] = r1_df["Flow"] * r1_df["TSS"] * 900 * 28.317 / 453592
+r1_df.columns = ['Date', 'Time', 'R1_Flow', 'R1_Velocity', 'R1_Depth', 'R1_act', 'R1_TSS_Conc']
 r1_df.drop(["Date", "Time"], axis=1, inplace=True)
-r3_df = get_ele_df("Link R3", lines)
-r3_df["R3_TSS_load"] = r3_df["Flow"] * r3_df["TSS"] * 900 / 453592 / 28.317
-r3_df.columns = ['Date', 'Time', 'R3_Flow', 'R3_Velocity', 'R3_Depth', 'R3_act',
-                  'R3_TSS', 'R3_TP', 'R3_TN', 'R3_TSS_load']
+r3_df = get_ele_df("Link R3", lines2)
+# r3_df["R3_TSS_load"] = r3_df["Flow"] * r3_df["TSS"] * 900 / 453592 / 28.317
+r3_df.columns = ['Date', 'Time', 'R3_Flow', 'R3_Velocity', 'R3_Depth', 'R3_act', 'R3_TSS_Conc']
 r3_df.drop(["Date", "Time"], axis=1, inplace=True)
 
-# get total flood volume (10^6 gal) from .rpt file
-total_flood = 0
-# node_flooded = []
-if all_flooding.max() > 0:
-    for i, l in enumerate(lines):  # TODO use summary fxn in read_rpt.py instead
-        if l.startswith("  Node Flooding Summary"):  # find flooding section
-            start = i + 10
-            print(start)
-            end = get_end_line(file_lines=lines, start_line=start)
-            for line in lines[start:end]:
-                # node_flooded.append(line.strip().split()[0])
-                total_flood += float(line.strip().split()[-2])
-        else:
-            print("no flooding summary found")
-            total_flood = -9999
+# # get total flood volume (10^6 gal) from .rpt file
+# total_flood = 0
+# # node_flooded = []
+# if all_flooding.max() > 0:
+#     for i, l in enumerate(lines):
+#         if l.startswith("  Node Flooding Summary"):  # find flooding section
+#             start = i + 10
+#             print(start)
+#             end = get_end_line(file_lines=lines, start_line=start)
+#             for line in lines[start:end]:
+#                 # node_flooded.append(line.strip().split()[0])
+#                 total_flood += float(line.strip().split()[-2])
+#         else:
+#             print("no flooding summary found")
+#             total_flood = -9999
+
+# get data from summary rpt file
+total_flood = get_total_flooding(lines)
+flood_df = get_summary_df(lines, "Node Flooding Summary")
+flood_df.columns = ["Hrs_Fld", "Max_Rate", "Max_Day", "Max_Time", "Total_Vol", "Max_Ponded"]
+outfall_df = get_summary_df(lines, "Outfall Loading Summary")
+outfall_df.columns = ["Flow_Pcnt", "Avg_Flow", "Max_Flow", "Total_Vol", "TSS"]
+st_df = get_summary_df(lines, "Storage Volume Summary")
+st_df.columns = ["Avg_Vol", "Avg_Pcnt_Full", "Evap_Pcnt", "Exfil_Pcnt", "Max_Vol",
+                 "Max_Pcnt_Full", "Max_Day", "Max_Time", "Max_Outflow"]
+pump_df = get_summary_df(lines, "Pumping Summary")
+pump_df.columns = ["Percent_Utilized", "Start_Ups", "Min_Flow", "Avg_Flow",
+                   "Max_Flow", "Total_Vol", "Power_Use", "Pcnt_Off_Low", "Pcnt_Off_High"]
+pollut_df = get_summary_df(lines, "Link Pollutant Load Summary")
+pollut_df.columns = ["TSS"]
 
 # save results data
 rpt_df = pd.concat([st1_df, st3_df, r1_df, r3_df], axis=1)
+
+if rpt_df["St1_Flooding"].any() > 0:
+    rpt_df["St1_Fld_Vol"] = flood_df.loc["st1"]["Total_Vol"]
+if rpt_df["St3_Flooding"].any() > 0:
+    rpt_df["St3_Fld_Vol"] = flood_df.loc["F134101"]["Total_Vol"]
+rpt_df["Pump_Pcnt"] = pump_df.loc["P1"]["Percent_Utilized"]
+rpt_df["Pump_Starts"] = pump_df.loc["P1"]["Start_Ups"]
+rpt_df["St1_TSS_Load"] = rpt_df["St1_TSS_Load"].sum()
+rpt_df["St3_TSS_Load"] = rpt_df["St3_TSS_Load"].sum()
+rpt_df["R1_TSS_Load"] = pollut_df.loc["R1"]["TSS"]
+rpt_df["R3_TSS_Load"] = pollut_df.loc["R3"]["TSS"]
+rpt_df["Outfall_TSS_Load"] = outfall_df.loc["System"]["TSS"]
 rpt_df["St1_Max"] = 10
-rpt_df['St3_Max'] = 7.16
+rpt_df['St3_Max'] = 6.56
 rpt_df['Total_Flood'] = total_flood
 
-rpt_df.to_csv("swmm_rl_hague/results_082019/ddpg_" + str(train_steps) + "steps_rwd3_valve.csv", index=False)
+rpt_df.to_csv("swmm_rl_hague/results_082019/ddpg_" + str(train_steps) + "steps_rwd20_bignet.csv", index=True)
 
 # result_list = [all_depths[0][0:, 0].tolist(), all_depths[0][0:, 1].tolist(),
 #                all_flooding[0][0:, 0].tolist(), all_flooding[0][0:, 1].tolist(),
@@ -191,11 +225,61 @@ rpt_df.to_csv("swmm_rl_hague/results_082019/ddpg_" + str(train_steps) + "steps_r
 #                all_actions[0][0:, 0].tolist(), all_actions[0][0:, 1].tolist(),
 #                all_tss[0][0:, 0].tolist(), all_tss[0][0:, 1].tolist()]
 # result_cols = ["St1_depth", "St3_depth", "St1_flooding", "St3_flooding", "total_flood", "St1_full", "St3_full",
-#                "R1_act", "R2_act", "R1_TSS", "R3_TSS"]
+#                "R1_act", "R3_act", "R1_TSS", "R3_TSS"]
 # results_df = pd.DataFrame(result_list).transpose()
 # results_df.columns = result_cols
 # # results_df = pd.concat([results_df, df], axis=1)
 # results_df.to_csv("swmm_rl_hague/results_082019/ddpg_" + str(train_steps) + "steps_rwd3_valve.csv", index=False)
+
+# plot reward
+plt.plot(memory.rewards.data)
+plt.tight_layout()
+plt.show()
+
+# plot state variables
+st1_depth, st3_depth = [], []
+r1_act, r3_act = [], []
+r1_flow, r3_flow = [], []
+r1_tss, r3_tss = [], []
+rain_fcst, tide_fcst = [], []
+
+for i in memory.observations.data[:memory.nb_entries]:
+    st1_depth.append(i[0])
+    st3_depth.append(i[1])
+    r1_act.append(i[2])
+    r3_act.append(i[3])
+    r1_flow.append(i[4])
+    r3_flow.append(i[5])
+    r1_tss.append(i[6])
+    r3_tss.append(i[7])
+    rain_fcst.append(i[8])
+    tide_fcst.append(i[9])
+
+fig = plt.figure(figsize=(6.5, 8.5))
+ax1 = fig.add_subplot(6, 1, 1)  # set up axes with sharing
+ax2 = fig.add_subplot(6, 1, 2, sharex=ax1)
+ax3 = fig.add_subplot(6, 1, 3, sharex=ax1)
+ax4 = fig.add_subplot(6, 1, 4, sharex=ax1)
+ax5 = fig.add_subplot(6, 1, 5, sharex=ax1)
+ax6 = fig.add_subplot(6, 1, 6, sharex=ax1)
+ax1.plot(st1_depth)
+ax1.plot(st3_depth)
+ax2.plot(r1_act)
+ax2.plot(r3_act)
+ax3.plot(r1_flow)
+ax3.plot(r3_flow)
+ax4.plot(r1_tss)
+ax4.plot(r3_tss)
+ax5.plot(rain_fcst)
+ax6.plot(tide_fcst)
+ax1.set_ylabel("Depth (ft)")
+ax2.set_ylabel("Valve Position")
+ax3.set_ylabel("Outflow (cfs)")
+ax4.set_ylabel("TSS (mg/L)")
+ax5.set_ylabel("Rain Fcst (in)")
+ax6.set_ylabel("Tide Fcst (ft)")
+fig.tight_layout()
+fig.show()
 
 # plot results from test with learned policy
 fig = plt.figure(figsize=(6.5, 8.5))
@@ -250,7 +334,7 @@ ax6.set_xlabel("Episode")
 
 fig.tight_layout()
 # fig.subplots_adjust(top=0.991, bottom=0.027, left=0.097, right=0.919, hspace=0.235, wspace=0.2)
-# fig.show()
+fig.show()
 fig.savefig("C:/PycharmProjects/swmm_rl_hague/results_082019/ddpg_" + str(train_steps) + "steps_rwd3_valve.png", dpi=300)
 plt.close()
 
