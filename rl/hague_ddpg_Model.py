@@ -71,12 +71,33 @@ class BasicEnv(Env):
     def step(self, action):
         r1_act_old = self.R1.current_setting
         r3_act_old = self.R3.current_setting
-        self.R1.target_setting = action[0]
-        self.R3.target_setting = action[1]
+        self.R1.target_setting = np.float(action[0])  # swmm5 requires float, python float is C double
+        self.R3.target_setting = np.float(action[1])
         cum_fld = self.sys_stats.routing_stats['flooding']  # get total sys flooding before step
         r1_cum_tss = self.R1.total_loading['TSS']  # total orifice loading before step
         r3_cum_tss = self.R3.total_loading['TSS']
         outfall_cum_tss = self.E143250.outfall_statistics['pollutant_loading']['TSS']  # total outfall loading before step
+
+        # calculate expert policy (TSS RBC) before step
+        if self.St1.pollut_quality['TSS'] >= 1:  # threshold for valve operation
+            r1_expert = 0
+        else:
+            r1_expert = 1.
+
+        if self.St3.pollut_quality['TSS'] >= 1:  # threshold for valve operation
+            r3_expert = 0
+        else:
+            r3_expert = 1.
+
+        # set st3 min depth
+        if self.St3.depth <= 3.56:
+            r3_expert = 0
+
+        # set max allowed depth
+        if self.St1.flooding > 0:
+            r1_expert = 1.
+        if self.St3.depth > 5.75:
+            r3_expert = 1.
 
         self.sim.__next__()
 
@@ -187,9 +208,9 @@ class BasicEnv(Env):
         # reward = - ((current_cum_fld - cum_fld) / 50000 + (current_outfall_cum_tss - outfall_cum_tss) +
         #             self.St1.flooding * 100 + self.St3.flooding * 100)
 
-        # 20 system flood and pollutant load reward with small action penalty and st3 target
-        reward = - ((current_cum_fld - cum_fld) / 40000 + (current_outfall_cum_tss - outfall_cum_tss) +
-                    self.St1.flooding * 100 + self.St3.flooding * 100 + abs(self.St3.depth - 3.56) / 2)
+        # # 20 system flood and pollutant load reward with small action penalty and st3 target
+        # reward = - ((current_cum_fld - cum_fld) / 40000 + (current_outfall_cum_tss - outfall_cum_tss) +
+        #             self.St1.flooding * 100 + self.St3.flooding * 100 + abs(self.St3.depth - 3.56) / 2)
 
         # # 21 system flood and pond depths reward
         # reward = - ((current_cum_fld - cum_fld) + abs(self.St3.depth - 3.56) + abs(self.St1.depth - 7.5))
@@ -207,12 +228,28 @@ class BasicEnv(Env):
         #             self.St1.flooding * 100 + self.St3.flooding * 100 + abs(self.St3.depth - 3.56) / 2 +
         #             self.E143361.flooding * 100)
 
-        # # conditional with pollutants reward
-        # if np.sum(self.fcst[self.t, :-1]) > 0:  # check if rainfall forecast is positive
-        # reward = - (self.St1.flooding + self.St3.flooding + self.R1.pollut_quality + self.R3.pollut_quality)
-        # else:
-        #     reward = - (abs(self.St1.depth - 7.5) + abs(self.St3.depth - 3.56) +
-        #                 self.R1.pollut_quality + self.R3.pollut_quality)
+        # # 26
+        # reward = - ((current_cum_fld - cum_fld) / 50000 +
+        #             self.St1.flooding * 100 + self.St3.flooding * 100 +
+        #             abs(self.St3.depth - 3.56) / 2 +
+        #             (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+
+        # # 27 with expert policy
+        # reward = - (current_cum_fld - cum_fld) / 50000 - (abs(r1_act_new - r1_expert) + abs(r3_act_new - r3_expert))
+
+        # # 28 with expert policy
+        # reward = - (abs(r1_act_new - r1_expert) + abs(r3_act_new - r3_expert))
+
+        # # 29 with expert policy
+        # reward = - (current_cum_fld - cum_fld) / 45000 - (abs(r1_act_new - r1_expert) + abs(r3_act_new - r3_expert))
+
+        # 30 conditional with pollutants reward
+        if rain_fcst > 0.5:  # check if rainfall forecast is positive
+            reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + self.St3.flooding * 1000 +
+                        (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+        else:
+            reward = - (abs(self.St1.depth - 5.7) + abs(self.St3.depth - 3.56) +
+                        (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
 
         if self.t < self.T-1:
             done = False

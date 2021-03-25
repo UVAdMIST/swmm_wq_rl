@@ -18,30 +18,17 @@ from keras import backend as K
 from rl.agents import DDPGAgent
 from rl.memory import SequentialMemory
 from rl.random import OrnsteinUhlenbeckProcess
-from swmm_rl_hague.hague_ddpg_Model import BasicEnv
-from swmm_rl_hague.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
+from rl.callbacks import WandbLogger
+from rl_wq.hague_ddpg_Model import BasicEnv
+from processing.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
 
-
-# def get_end_line(file_lines, start_line):
-#     for i in range(len(file_lines[start_line:])):
-#         line_no = start_line + i
-#         if file_lines[line_no].strip() == "" and file_lines[line_no + 1].strip() == "":
-#             return line_no
-#     # raise error if end line of section not found
-#     raise KeyError('Did not find end of section starting on line {}'.format(start_line))
-
-
-swmm_file = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_simpleRL.inp"  # rpt w/o time series
-swmm_file2 = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_simpleRL2.inp"  # rpt w time series
-fcst = "C:/Users/Ben Bowes/Documents/LongTerm_SWMM/hague_fcst_2010_2019_dated.csv"
+swmm_file = "swmm_models/hague_v22_simpleRL.inp"
+fcst = "timeseries_data/hague_fcst_2010_2019_dated.csv"
 env = BasicEnv(inp_file=swmm_file, fcst_file=fcst)  # env with forecasts
 # env2 = BasicEnv(inp_file=swmm_file2, fcst_file=fcst)
 # env = BasicEnv(depth=Depth)  # basic env
 assert len(env.action_space.shape) == 1
 nb_actions = env.action_space.shape[0]
-
-# np.random.seed(123)
-# set_random_seed(1234)
 
 os.environ['PYTHONHASHSEED'] = '0'
 np.random.seed(42)
@@ -54,9 +41,9 @@ K.set_session(sess)
 actor = Sequential()
 # actor.add(BatchNormalization(input_shape=(1,) + env.observation_space.shape))  # batch norm
 actor.add(Flatten(input_shape=(1,) + env.observation_space.shape))  # is this needed with batch norm?
-actor.add(Dense(64))  # was 16
+actor.add(Dense(300))  # was 16
 actor.add(Activation('relu'))  # try leaky relu?
-actor.add(Dense(64))
+actor.add(Dense(150))
 actor.add(Activation('relu'))
 # actor.add(Dense(8))
 # actor.add(Activation('relu'))
@@ -68,9 +55,9 @@ action_input = Input(shape=(nb_actions,), name='action_input')
 observation_input = Input(shape=(1,) + env.observation_space.shape, name='observation_input')
 flattened_observation = Flatten()(observation_input)
 x = Concatenate()([action_input, flattened_observation])
-x = Dense(96)(x)
+x = Dense(300)(x)  # was 32
 x = Activation('relu')(x)
-x = Dense(96)(x)
+x = Dense(150)(x)
 x = Activation('relu')(x)
 # x = Dense(32)(x)
 # x = Activation('relu')(x)
@@ -80,19 +67,19 @@ critic = Model(inputs=[action_input, observation_input], outputs=x)
 # print(critic.summary())
 
 memory = SequentialMemory(limit=1000000, window_length=1)
-random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=.15, mu=0., sigma=.1)  # maybe increase sigma, more exploration, 0.25
+random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=.15, mu=0., sigma=.25)  # maybe increase sigma, more exploration, was 0.1
 agent = DDPGAgent(nb_actions=nb_actions, actor=actor, critic=critic, critic_action_input=action_input,
                   memory=memory, nb_steps_warmup_critic=50, nb_steps_warmup_actor=50,
                   random_process=random_process, gamma=.99, target_model_update=1e-3)
-agent.compile(Adam(lr=.001, clipnorm=1.), metrics=['mae'])  # maybe decrease lr
-train_steps = 120000  # 197000
-agent.load_weights('swmm_rl_hague/agent_weights/ddpg_weights_300000_rwd14bignet.h5f')
+agent.compile(Adam(lr=.0001, clipnorm=1.), metrics=['mae'])  # maybe decrease lr, was 0.001
+train_steps = 300000
+# agent.load_weights('rl_wq/agent_weights/ddpg_weights_100000_rwd27.h5f')
 # agent.load_weights('swmm_rl_multi_inp_forecast/agent_weights/ddpg_swmm_weights_100000_depth_4.61.h5f'.format(Depth))  # these wgts are from training XXX, but are used in the forecast models
 # agent.load_weights('C:/PycharmProjects/swmm_rl_multi_inp_forecast/agent_weights/ddpg_swmm_weights2_197000_depth_4.61.h5f')  # final weights from study 2
 
 train_start = datetime.now()
-agent.fit(env, nb_steps=train_steps, verbose=2)
-agent.save_weights('swmm_rl_hague/agent_weights/ddpg_weights_{}_rwd20bignet.h5f'.format(train_steps), overwrite=True)
+agent.fit(env, nb_steps=train_steps, verbose=2, callbacks=[WandbLogger()])
+agent.save_weights('rl_wq/agent_weights/ddpg_weights_{}_rwd30.h5f'.format(train_steps), overwrite=True)
 
 train_end = datetime.now()
 
@@ -124,9 +111,9 @@ train_end = datetime.now()
 history = agent.test(env, nb_episodes=1, visualize=False, nb_max_start_steps=0)  # rpt w/o time series
 env.close()
 
-env2 = BasicEnv(inp_file=swmm_file2, fcst_file=fcst)  # rpt with time series
-history2 = agent.test(env2, nb_episodes=1, visualize=False, nb_max_start_steps=0)
-env2.close()
+# env2 = BasicEnv(inp_file=swmm_file2, fcst_file=fcst)  # rpt with time series
+# history2 = agent.test(env2, nb_episodes=1, visualize=False, nb_max_start_steps=0)
+# env2.close()
 
 # all_actions = np.array(history.history['action'])
 # all_states = np.array(history.history['states'])
@@ -145,25 +132,24 @@ for i in range(num_episodes):
     avg_reward.append(np.mean(temp_rwd))
 
 # read rpt file
-lines = get_file_contents(swmm_file.split('.')[0] + ".rpt")  # rpt w/o time series
-lines2 = get_file_contents(swmm_file2.split('.')[0] + ".rpt")  # rpt with time series
+lines = get_file_contents(swmm_file.split('.')[0] + ".rpt")
 
 # create dfs of time series
-st1_df = get_ele_df("Node st1", lines2)
+st1_df = get_ele_df("Node st1", lines)
 st1_df["St1_TSS_Load"] = st1_df["Inflow"] * st1_df["TSS"] * 900 * 28.317 / 453592  # est. load in lb/time step
 st1_df.columns = ['Date', 'Time', 'St1_Inflow', 'St1_Flooding', 'St1_Depth',
                   'St1_Head', 'St1_TSS_Conc', "St1_TSS_Load"]
 st1_df.drop(["Date", "Time"], axis=1, inplace=True)
-st3_df = get_ele_df("Node F134101", lines2)
+st3_df = get_ele_df("Node F134101", lines)
 st3_df["St3_TSS_load"] = st3_df["Inflow"] * st3_df["TSS"] * 900 * 28.317 / 453592
 st3_df.columns = ['Date', 'Time', 'St3_Inflow', 'St3_Flooding', 'St3_Depth',
                   'St3_Head', 'St3_TSS_Conc', "St3_TSS_Load"]
 st3_df.drop(["Date", "Time"], axis=1, inplace=True)
-r1_df = get_ele_df("Link R1", lines2)
+r1_df = get_ele_df("Link R1", lines)
 # r1_df["R1_TSS_load"] = r1_df["Flow"] * r1_df["TSS"] * 900 * 28.317 / 453592
 r1_df.columns = ['Date', 'Time', 'R1_Flow', 'R1_Velocity', 'R1_Depth', 'R1_act', 'R1_TSS_Conc']
 r1_df.drop(["Date", "Time"], axis=1, inplace=True)
-r3_df = get_ele_df("Link R3", lines2)
+r3_df = get_ele_df("Link R3", lines)
 # r3_df["R3_TSS_load"] = r3_df["Flow"] * r3_df["TSS"] * 900 / 453592 / 28.317
 r3_df.columns = ['Date', 'Time', 'R3_Flow', 'R3_Velocity', 'R3_Depth', 'R3_act', 'R3_TSS_Conc']
 r3_df.drop(["Date", "Time"], axis=1, inplace=True)
@@ -217,7 +203,7 @@ rpt_df["St1_Max"] = 10
 rpt_df['St3_Max'] = 6.56
 rpt_df['Total_Flood'] = total_flood
 
-rpt_df.to_csv("swmm_rl_hague/results_082019/ddpg_" + str(train_steps) + "steps_rwd20_bignet.csv", index=True)
+rpt_df.to_csv("C:/Users/hydrology.DESKTOP-S8EA36P/PycharmProjects/swmm_wq_rl/rl_wq/results_082019/ddpg_" + str(train_steps) + "steps_rwd30_bignet.csv", index=True)
 
 # result_list = [all_depths[0][0:, 0].tolist(), all_depths[0][0:, 1].tolist(),
 #                all_flooding[0][0:, 0].tolist(), all_flooding[0][0:, 1].tolist(),
