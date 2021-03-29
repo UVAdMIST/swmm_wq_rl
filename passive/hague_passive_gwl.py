@@ -6,25 +6,30 @@ This script records depth and flood values at each swmm model time step and plot
 import datetime
 import math
 import pandas as pd
-# from swmm_utils import calc_gwl
-from pyswmm import Simulation, Nodes, Links
+from processing.swmm_utils import calc_gwl
+from pyswmm import Simulation, Nodes, Links, SystemStats
 from processing.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
 
 start_time = datetime.datetime.now()
 control_time_step = 900  # control time step in seconds
 swmm_inp = "swmm_models/hague_v22_passive.inp"
-# gwl_df = pd.read_csv("timeseries_data/GWL_2010_2019.csv",
-#                      usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True, parse_dates=True)
+gwl_df = pd.read_csv("timeseries_data/GWL_2010_2019.csv",
+                     usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True, parse_dates=True)
+
+time, sys_fld = [], []
+R1_load, R3_load, outfall_load = [], [], []
 
 with Simulation(swmm_inp) as sim:  # rpt with time series
-    # sim.step_advance(control_time_step)
-    sim.start_time = datetime.datetime(2010, 1, 1, 0, 0, 0)  # change start time here
-    sim.end_time = datetime.datetime(2019, 11, 1, 0, 0, 0)  # change end time here
+    sim.step_advance(control_time_step)
+    sim.start_time = datetime.datetime(2019, 8, 1, 0, 0, 0)  # change start time here
+    sim.end_time = datetime.datetime(2019, 9, 1, 0, 0, 0)  # change end time here
     previous_step = sim.start_time
+    sys_stats = SystemStats(sim)
     node_object = Nodes(sim)  # init node object
     St1 = node_object["st1"]
     St2 = node_object["st2"]
     St3 = node_object["F134101"]
+    E143250 = node_object["E143250"]
 
     link_object = Links(sim)  # init link object
     R1 = link_object["R1"]
@@ -36,15 +41,43 @@ with Simulation(swmm_inp) as sim:  # rpt with time series
     St2_rad = math.sqrt(20000/math.pi)
     St3_rad = math.sqrt(50000/math.pi)
 
+    count = 0
     for step in sim:
         # print(step_count)
         if sim.percent_complete * 100 % 5 == 0:
             print(sim.percent_complete)
 
+        time.append(sim.current_time)
         if sim.current_time == sim.start_time:
             R1.target_setting = 1
             R2.target_setting = 1
             R3.target_setting = 1
+            sys_fld.append(sys_stats.routing_stats['flooding'])  # cubic feet
+            R1_load.append(R1.total_loading['TSS'])
+            R3_load.append(R3.total_loading['TSS'])
+            outfall_load.append(E143250.outfall_statistics['pollutant_loading']['TSS'])
+
+        if count > 0:  # save incremental system flooding and TSS
+            sys_fld.append(sys_stats.routing_stats['flooding'] - sum(sys_fld))
+            R1_load.append(R1.total_loading['TSS'] - sum(R1_load))
+            R3_load.append(R3.total_loading['TSS'] - sum(R3_load))
+            outfall_load.append(E143250.outfall_statistics['pollutant_loading']['TSS'] - sum(outfall_load))
+
+        # calculate GW exchange
+        # current_gwl = gwl_df.iloc[gwl_df.index.get_loc(sim.current_time, method='nearest')]["IDW"]
+        # print(sim.current_time, current_gwl)
+        # St1_gwq = calc_gwl(St1.depth - abs(St1.invert_elevation), current_gwl, St1_rad)
+        # St2_gwq = calc_gwl(St2.depth - abs(St2.invert_elevation), current_gwl, St2_rad)
+        # St3_gwq = calc_gwl(St3.depth - abs(St3.invert_elevation), current_gwl, St3_rad)
+        # print(St1_gwq)
+
+        # print("pregwl", St1.total_inflow)
+        # add (or subtract) gw volume to storage unit
+        # St1.generated_inflow(St1_gwq)
+        # St2.generated_inflow(St2_gwq)
+        # St3.generated_inflow(St3_gwq)
+        # print("post gwl", St1.total_inflow)
+        count += 1
     sim.report()
 
 # read rpt file
@@ -103,6 +136,6 @@ rpt_df["St1_Max"] = 10
 rpt_df['St3_Max'] = 6.56
 rpt_df['Total_Flood'] = total_flood
 
-rpt_df.to_csv("results_passive/alldata_passive_v22.csv", index=True)
+rpt_df.to_csv("results_passive/alldata_passive_v22_gw.csv", index=True)
 
 print("\n run time: ", (datetime.datetime.now() - start_time))

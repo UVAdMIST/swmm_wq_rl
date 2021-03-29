@@ -16,7 +16,7 @@ from processing.read_rpt import get_ele_df, get_file_contents, get_summary_df, g
 
 control_time_step = 900  # control time step in seconds
 
-swmm_inp = "swmm_models/hague_v22_passive2.inp"
+swmm_inp = "swmm_models/hague_v22_passive.inp"
 
 gwl_df = pd.read_csv("timeseries_data/GWL_2010_2019.csv",
                      usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True,
@@ -26,8 +26,8 @@ run_start = datetime.datetime.now()
 
 with Simulation(swmm_inp) as sim:  # run sim for rpt w/o time series
     # sim.step_advance(control_time_step)
-    sim.start_time = datetime.datetime(2019, 8, 1, 0, 0, 0)  # change start time here
-    sim.end_time = datetime.datetime(2019, 9, 1, 0, 0, 0)  # change end time here
+    sim.start_time = datetime.datetime(2010, 1, 1, 0, 0, 0)  # change start time here
+    sim.end_time = datetime.datetime(2019, 11, 1, 0, 0, 0)  # change end time here
 
     node_object = Nodes(sim)  # init node object
     St1 = node_object["st1"]
@@ -46,6 +46,9 @@ with Simulation(swmm_inp) as sim:  # run sim for rpt w/o time series
 
     step_count = 1  # init counter for control step
     for step in sim:  # loop through all steps in the simulation
+        if sim.percent_complete * 100 % 5 == 0:
+            print(sim.percent_complete)
+
         if sim.current_time == sim.start_time:
             R1.target_setting = 1.
             R3.target_setting = 1.
@@ -66,7 +69,7 @@ with Simulation(swmm_inp) as sim:  # run sim for rpt w/o time series
         # print("post gwl", St1.total_inflow)
 
         if step_count % control_time_step == 0:  # on control time step look at forecast
-            print("control step:", sim.current_time)
+            # print("control step:", sim.current_time)
 
             if St1.pollut_quality['TSS'] >= 1:  # threshold for valve operation
                 R1.target_setting = 0
@@ -142,6 +145,6 @@ rpt_df["St1_Max"] = 10
 rpt_df['St3_Max'] = 6.56
 rpt_df['Total_Flood'] = total_flood
 
-rpt_df.to_csv("results_rbc/082019_v22_tss1max575_rbc.csv", index=True)
+rpt_df.to_csv("results_rbc/alldata_tssrbc_v22.csv", index=True)
 
 print("\n run time: ", (datetime.datetime.now() - run_start))
