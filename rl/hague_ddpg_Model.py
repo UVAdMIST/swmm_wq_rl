@@ -243,12 +243,51 @@ class BasicEnv(Env):
         # # 29 with expert policy
         # reward = - (current_cum_fld - cum_fld) / 45000 - (abs(r1_act_new - r1_expert) + abs(r3_act_new - r3_expert))
 
-        # 30 conditional with pollutants reward
+        # # 30 conditional with pollutants reward
+        # if rain_fcst > 0.5:  # check if rainfall forecast is positive
+        #     reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + self.St3.flooding * 1000 +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+        # else:
+        #     reward = - (abs(self.St1.depth - 5.7) + abs(self.St3.depth - 3.56) +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+
+        # # 31 conditional with pollutants reward
+        # if self.St3.depth > 5.75:  # penalize st3 if above upstream flood threshold
+        #     st3_depth_rwd = 1000
+        # else:
+        #     st3_depth_rwd = 0
+        #
+        # if rain_fcst > 0.5:  # check if rainfall forecast is positive
+        #     reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + st3_depth_rwd +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+        # else:
+        #     reward = - (abs(self.St1.depth - 6.) + abs(self.St3.depth - 3.56) +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+
+        # # 32 conditional with pollutants reward
+        # if self.St3.depth > 5.75:  # penalize st3 if above upstream flood threshold
+        #     st3_depth_rwd = 1000
+        # else:
+        #     st3_depth_rwd = 0
+        #
+        # if rain_fcst > 0.5:  # check if rainfall forecast is positive
+        #     reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + st3_depth_rwd +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+        # else:
+        #     reward = - (abs(self.St3.depth - 3.56)
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+
+        # 33 conditional with pollutants reward
+        if self.St3.depth > 5.75:  # penalize st3 if above upstream flood threshold
+            st3_depth_rwd = 1000
+        else:
+            st3_depth_rwd = 0
+
         if rain_fcst > 0.5:  # check if rainfall forecast is positive
-            reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + self.St3.flooding * 1000 +
+            reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + st3_depth_rwd +
                         (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
         else:
-            reward = - (abs(self.St1.depth - 5.7) + abs(self.St3.depth - 3.56) +
+            reward = - (abs(self.St3.depth - 3.56) + st3_depth_rwd +
                         (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
 
         if self.t < self.T-1:

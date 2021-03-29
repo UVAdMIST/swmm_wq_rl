@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 from keras.models import Sequential, Model
 from keras.layers import Dense, Activation, Flatten, Input, Concatenate, BatchNormalization
 from keras.optimizers import Adam
+from keras.callbacks import ModelCheckpoint
 import tensorflow as tf
 from keras import backend as K
 from rl.agents import DDPGAgent
@@ -66,20 +67,24 @@ x = Activation('linear')(x)
 critic = Model(inputs=[action_input, observation_input], outputs=x)
 # print(critic.summary())
 
-memory = SequentialMemory(limit=1000000, window_length=1)
+memory = SequentialMemory(limit=500000, window_length=1)
 random_process = OrnsteinUhlenbeckProcess(size=nb_actions, theta=.15, mu=0., sigma=.25)  # maybe increase sigma, more exploration, was 0.1
 agent = DDPGAgent(nb_actions=nb_actions, actor=actor, critic=critic, critic_action_input=action_input,
                   memory=memory, nb_steps_warmup_critic=50, nb_steps_warmup_actor=50,
                   random_process=random_process, gamma=.99, target_model_update=1e-3)
 agent.compile(Adam(lr=.0001, clipnorm=1.), metrics=['mae'])  # maybe decrease lr, was 0.001
-train_steps = 300000
-# agent.load_weights('rl_wq/agent_weights/ddpg_weights_100000_rwd27.h5f')
+train_steps = 369250
+rwd_num = 33
+# agent.load_weights('rl_wq/agent_weights/ddpg_weights_300000_rwd30.h5f')
 # agent.load_weights('swmm_rl_multi_inp_forecast/agent_weights/ddpg_swmm_weights_100000_depth_4.61.h5f'.format(Depth))  # these wgts are from training XXX, but are used in the forecast models
 # agent.load_weights('C:/PycharmProjects/swmm_rl_multi_inp_forecast/agent_weights/ddpg_swmm_weights2_197000_depth_4.61.h5f')  # final weights from study 2
 
 train_start = datetime.now()
-agent.fit(env, nb_steps=train_steps, verbose=2, callbacks=[WandbLogger()])
-agent.save_weights('rl_wq/agent_weights/ddpg_weights_{}_rwd30.h5f'.format(train_steps), overwrite=True)
+cb_list = [WandbLogger(name='Rwd{}, {}stp'.format(rwd_num, train_steps), project='hague_rl'),
+           ModelCheckpoint('rl_wq/agent_weights/ddpg_weights_best_rwd{}.h5f'.format(rwd_num),
+                           'loss', save_best_only=True, mode='min', verbose=1, save_weights_only=True)]
+agent.fit(env, nb_steps=train_steps, verbose=2, callbacks=cb_list)
+agent.save_weights('rl_wq/agent_weights/ddpg_weights_{}_rwd{}.h5f'.format(train_steps, rwd_num), overwrite=True)
 
 train_end = datetime.now()
 
@@ -203,7 +208,7 @@ rpt_df["St1_Max"] = 10
 rpt_df['St3_Max'] = 6.56
 rpt_df['Total_Flood'] = total_flood
 
-rpt_df.to_csv("C:/Users/hydrology.DESKTOP-S8EA36P/PycharmProjects/swmm_wq_rl/rl_wq/results_082019/ddpg_" + str(train_steps) + "steps_rwd30_bignet.csv", index=True)
+rpt_df.to_csv("C:/Users/hydrology.DESKTOP-S8EA36P/PycharmProjects/swmm_wq_rl/rl_wq/results_082019/ddpg_{}steps_rwd{}_bignet.csv".format(train_steps, rwd_num), index=True)
 
 # result_list = [all_depths[0][0:, 0].tolist(), all_depths[0][0:, 1].tolist(),
 #                all_flooding[0][0:, 0].tolist(), all_flooding[0][0:, 1].tolist(),
