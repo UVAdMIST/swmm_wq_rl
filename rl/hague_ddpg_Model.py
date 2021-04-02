@@ -6,6 +6,7 @@ Created on Tue Jul 23 07:54:22 2019
 
 This script sets up a SWMM environment with forecasts of rain/tide as part of the state
 """
+
 import pandas as pd
 import numpy as np
 from pyswmm import Simulation, Nodes, Links, SystemStats
@@ -14,7 +15,7 @@ from gym import spaces
 
 
 class BasicEnv(Env):
-    def __init__(self, inp_file, fcst_file):
+    def __init__(self, inp_file, fcst_file, start_date, end_date):
         # initialize simulation
         self.input_file = inp_file
         self.sim = Simulation(self.input_file)  # read input file
@@ -24,6 +25,8 @@ class BasicEnv(Env):
         self.control_time_step = 900  # control time step in seconds
         self.sim.step_advance(self.control_time_step)  # set control time step
         self.sys_stats = SystemStats(self.sim)
+        self.sim.start_time = start_date  # change start time here
+        self.sim.end_time = end_date  # change end time here
 
         node_object = Nodes(self.sim)  # init node object
         self.St1 = node_object["st1"]
@@ -71,8 +74,6 @@ class BasicEnv(Env):
     def step(self, action):
         r1_act_old = self.R1.current_setting
         r3_act_old = self.R3.current_setting
-        self.R1.target_setting = np.float(action[0])  # swmm5 requires float, python float is C double
-        self.R3.target_setting = np.float(action[1])
         cum_fld = self.sys_stats.routing_stats['flooding']  # get total sys flooding before step
         r1_cum_tss = self.R1.total_loading['TSS']  # total orifice loading before step
         r3_cum_tss = self.R3.total_loading['TSS']
@@ -98,6 +99,9 @@ class BasicEnv(Env):
             r1_expert = 1.
         if self.St3.depth > 5.75:
             r3_expert = 1.
+
+        self.R1.target_setting = np.float(action[0])  # swmm5 requires float, python float is C double
+        self.R3.target_setting = np.float(action[1])
 
         self.sim.__next__()
 
@@ -277,7 +281,31 @@ class BasicEnv(Env):
         #     reward = - (abs(self.St3.depth - 3.56)
         #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
 
-        # 33 conditional with pollutants reward
+        # # 33 conditional with pollutants reward
+        # if self.St3.depth > 5.75:  # penalize st3 if above upstream flood threshold
+        #     st3_depth_rwd = 1000
+        # else:
+        #     st3_depth_rwd = 0
+        #
+        # if rain_fcst > 0.5:  # check if rainfall forecast is positive
+        #     reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + st3_depth_rwd +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+        # else:
+        #     reward = - (abs(self.St3.depth - 3.56) + st3_depth_rwd +
+        #                 (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
+
+        # # 35 conditional st3 only with pollutants reward
+        # if self.St3.depth > 5.75:  # penalize st3 if above upstream flood threshold
+        #     st3_depth_rwd = 1000
+        # else:
+        #     st3_depth_rwd = 0
+        #
+        # if rain_fcst > 0.5:  # check if rainfall forecast is positive
+        #     reward = - ((current_cum_fld - cum_fld) + st3_depth_rwd + (current_r3_cum_tss - r3_cum_tss))
+        # else:
+        #     reward = - (abs(self.St3.depth - 3.56) + st3_depth_rwd + (current_r3_cum_tss - r3_cum_tss))
+
+        # 36 conditional with pollutants, st1 based on tss rbc
         if self.St3.depth > 5.75:  # penalize st3 if above upstream flood threshold
             st3_depth_rwd = 1000
         else:
@@ -287,7 +315,7 @@ class BasicEnv(Env):
             reward = - ((current_cum_fld - cum_fld) + self.St1.flooding * 1000 + st3_depth_rwd +
                         (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
         else:
-            reward = - (abs(self.St3.depth - 3.56) + st3_depth_rwd +
+            reward = - (abs(r1_act_new - r1_expert) + abs(self.St3.depth - 3.56) +
                         (current_r1_cum_tss - r1_cum_tss) + (current_r3_cum_tss - r3_cum_tss))
 
         if self.t < self.T-1:
@@ -308,6 +336,7 @@ class BasicEnv(Env):
         self.fcst = pd.read_csv(self.fcst_file, index_col="datetime", infer_datetime_format=True, parse_dates=True)
         self.sim.step_advance(self.control_time_step)  # set control time step
         self.sys_stats = SystemStats(self.sim)
+
         node_object = Nodes(self.sim)  # init node object
         self.St1 = node_object["st1"]
         self.St2 = node_object["st2"]
