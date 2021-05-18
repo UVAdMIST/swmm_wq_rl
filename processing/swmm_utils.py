@@ -76,6 +76,11 @@ def get_total_flooding(file_contents):
     return float(file_contents[fl_start_line].split()[-1])
 
 
+def get_mass_reacted(file_contents):
+    fl_start_line = get_start_line("Mass Reacted", file_contents)
+    return float(file_contents[fl_start_line].split()[-1])
+
+
 def get_summary_df(file_contents, heading):
     """
     heading: heading of summary table (e.g, "Node Flooding Summary")
@@ -126,8 +131,10 @@ def get_result_df(rpt_file):
 
     # get summary data
     total_flood = get_total_flooding(lines)
-    flood_df = get_summary_df(lines, "Node Flooding Summary")
-    flood_df.columns = ["Hrs_Fld", "Max_Rate", "Max_Day", "Max_Time", "Total_Vol", "Max_Ponded"]
+    tss_reacted = get_mass_reacted(lines)
+    if total_flood > 0.:
+        flood_df = get_summary_df(lines, "Node Flooding Summary")
+        flood_df.columns = ["Hrs_Fld", "Max_Rate", "Max_Day", "Max_Time", "Total_Vol", "Max_Ponded"]
     outfall_df = get_summary_df(lines, "Outfall Loading Summary")
     outfall_df.columns = ["Flow_Pcnt", "Avg_Flow", "Max_Flow", "Total_Vol", "TSS"]
     st_df = get_summary_df(lines, "Storage Volume Summary")
@@ -156,6 +163,7 @@ def get_result_df(rpt_file):
     rpt_df["St1_Max"] = 10
     rpt_df['St3_Max'] = 6.56
     rpt_df['Total_Flood'] = total_flood
+    rpt_df["Mass_Reacted"] = tss_reacted
 
     return rpt_df
 
