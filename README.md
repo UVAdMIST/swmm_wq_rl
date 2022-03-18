@@ -1,5 +1,5 @@
 # swmm_wq_rl
-This repository contains python codes and SWMM models to develop real-time control policies that seek to mitigate flooding and reduce pollution for the stormwater system in the Hague area of Norfolk, Virginia.
+This repository contains python codes and SWMM models to develop real-time control policies that seek to mitigate flooding and reduce pollution for the stormwater system in the Hague area of Norfolk, Virginia. Details and results of this research have been published in Environmental Science: Water Research and Technology at https://doi.org/10.1039/D1EW00582K.
 
 ## Required packages:
 1. pyswmm
