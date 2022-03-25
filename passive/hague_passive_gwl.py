@@ -1,28 +1,30 @@
 """
 Created by Benjamin Bowes, 4-19-19
-This script records depth and flood values at each swmm model time step and plots them.
+This script runs a passive SWMM simulation for comparison with RTC.
 """
 
 import datetime
 import math
 import pandas as pd
-from processing.swmm_utils import calc_gwl, get_result_df
+from swmm_rl_hague.swmm_utils import calc_gwl, calc_dupuit, get_result_df
+# from swmm_rl_hague.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
 from pyswmm import Simulation, Nodes, Links, SystemStats
-from processing.read_rpt import get_ele_df, get_file_contents, get_summary_df, get_total_flooding
 
 start_time = datetime.datetime.now()
 control_time_step = 900  # control time step in seconds
-swmm_inp = "swmm_models/hague_v22_passive_gw.inp"
-gwl_df = pd.read_csv("timeseries_data/GWL_2010_2019.csv",
-                     usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True, parse_dates=True)
+swmm_inp = "C:/PycharmProjects/swmm_rl_hague/hague_inp_files_pyswmm/hague_v22_passive.inp"
 
-# time, sys_fld = [], []
+gwl_df = pd.read_csv("C:/Users/Ben Bowes/Documents/HRSD GIS/Site Data/Data_2010_2019/IDW_2010_2019.csv",
+                     usecols=["Datetime", "IDW"], index_col="Datetime", infer_datetime_format=True,
+                     parse_dates=True)
+
+# time, sys_fld = [], []  # init lists for saving incremental system flooding and TSS loads (not available in report)
 # R1_load, R3_load, outfall_load = [], [], []
 
 with Simulation(swmm_inp) as sim:  # rpt with time series
     sim.step_advance(control_time_step)
-    sim.start_time = datetime.datetime(2019, 8, 1, 0, 0, 0)  # change start time here
-    sim.end_time = datetime.datetime(2019, 9, 1, 0, 0, 0)  # change end time here
+    sim.start_time = datetime.datetime(2016, 9, 1, 0, 0, 0)  # change start time here
+    sim.end_time = datetime.datetime(2016, 10, 1, 0, 0, 0)  # change end time here
     previous_step = sim.start_time
     sys_stats = SystemStats(sim)
     node_object = Nodes(sim)  # init node object
@@ -66,9 +68,9 @@ with Simulation(swmm_inp) as sim:  # rpt with time series
         # calculate GW exchange
         current_gwl = gwl_df.iloc[gwl_df.index.get_loc(sim.current_time, method='nearest')]["IDW"]
         # print(sim.current_time, current_gwl)
-        St1_gwq = calc_gwl(St1.depth - abs(St1.invert_elevation), current_gwl, St1_rad)
+        St1_gwq = calc_dupuit(St1.depth, St1.invert_elevation, current_gwl, St1_rad, L=1)  #  - abs(St1.invert_elevation)
         # St2_gwq = calc_gwl(St2.depth - abs(St2.invert_elevation), current_gwl, St2_rad)
-        St3_gwq = calc_gwl(St3.depth - abs(St3.invert_elevation), current_gwl, St3_rad)
+        St3_gwq = calc_dupuit(St3.depth, St3.invert_elevation, current_gwl, St3_rad, L=1)  #  - abs(St3.invert_elevation)
         # print(St1_gwq)
 
         # print("pregwl", St1.total_inflow)
@@ -79,6 +81,9 @@ with Simulation(swmm_inp) as sim:  # rpt with time series
         # print("post gwl", St1.total_inflow)
         count += 1
     sim.report()
+
+# save incremental lists to df
+# inc_df = pd.DataFrame([time, sys_fld, R1_load, R3_load, outfall_load]).transpose()
 
 # # read rpt file
 # lines = get_file_contents(swmm_inp.split('.')[0] + ".rpt")  # rpt with time series
@@ -135,8 +140,7 @@ with Simulation(swmm_inp) as sim:  # rpt with time series
 # rpt_df["St1_Max"] = 10
 # rpt_df['St3_Max'] = 6.56
 # rpt_df['Total_Flood'] = total_flood
-
 rpt_df = get_result_df(swmm_inp.split('.')[0] + ".rpt")
-rpt_df.to_csv("results_passive/082019_passive_v22_gw_mass.csv", index=True)
+rpt_df.to_csv("C:/PycharmProjects/swmm_hague_rbc/cmac_results/092016_passive_v22_gw_dupuit1_fix.csv", index=True)
 
 print("\n run time: ", (datetime.datetime.now() - start_time))
