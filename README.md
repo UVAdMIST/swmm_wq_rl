@@ -14,4 +14,7 @@ Note that running RBC-DTN requires the pyswmm version in the rbc/pyswmm_hs.zip f
 3. Reinforcement Learning SWMM simulations use code in the rl_wq folder.
 
 ## References
+The RL agent training metrics are available in this report:
+<iframe src="https://wandb.ai/swmm_rl_wq/tuning/reports/Final-Agents-for-ES-WR-T-Paper--VmlldzoyMDA0Mjc3" style="border:none;height:1024px;width:100%">
+
 This work builds on https://github.com/UVAdMIST/swmm_rl which has been published in the Journal of Hydroinformatics and is available via open access at https://iwaponline.com/jh/article/doi/10.2166/hydro.2020.080/77759/Flood-mitigation-in-coastal-urban-catchments-using.
